@@ -61,16 +61,38 @@ bot.on('ready', () => {
 });
 
 bot.on('messageCreate', async (message) => {
+  // DEBUG: Log every message the bot receives
+  console.log('📩 Received message:', message.content);
+  console.log('👤 From:', message.author.tag);
+  console.log('🤖 Is bot?', message.author.bot);
+
   if (message.author.bot) return;
-  if (!message.content.startsWith('.allow')) return;
+
+  if (!message.content.startsWith('.allow')) {
+    console.log('⏭️ Not a .allow command, ignoring');
+    return;
+  }
+
+  console.log('🔍 Processing .allow command...');
 
   const args = message.content.split(' ');
-  if (args.length < 2) return message.reply('Usage: .allow @username');
+  if (args.length < 2) {
+    console.log('❌ No username provided');
+    return message.reply('Usage: .allow @username');
+  }
 
   const targetUser = message.mentions.users.first();
-  if (!targetUser) return message.reply('Mention a valid user.');
+  if (!targetUser) {
+    console.log('❌ No valid mention found');
+    return message.reply('Mention a valid user.');
+  }
+
+  console.log(`👤 Target user: ${targetUser.username} (${targetUser.id})`);
+  console.log(`🔑 Admin ID: ${process.env.ADMIN_DISCORD_ID}`);
+  console.log(`👤 Message author ID: ${message.author.id}`);
 
   if (message.author.id !== process.env.ADMIN_DISCORD_ID) {
+    console.log('❌ Not authorized (wrong admin ID)');
     return message.reply('❌ You are not authorized.');
   }
 
@@ -85,9 +107,10 @@ bot.on('messageCreate', async (message) => {
         isAllowed: true
       }
     });
+    console.log(`✅ ${targetUser.username} now has access.`);
     message.reply(`✅ ${targetUser.username} now has access.`);
   } catch (err) {
-    console.error('DB error:', err);
+    console.error('❌ DB error:', err);
     message.reply('❌ Database error occurred.');
   }
 });
@@ -107,6 +130,11 @@ app.get('/api/auth/callback', async (req, res) => {
   if (!code) return res.status(400).send('No code provided');
 
   try {
+    console.log('🔑 Exchanging code for token...');
+    console.log('📦 Client ID:', process.env.DISCORD_CLIENT_ID);
+    console.log('🔒 Client Secret exists?', !!process.env.DISCORD_CLIENT_SECRET);
+    console.log('🌐 Redirect URI:', `${BASE_URL}/api/auth/callback`);
+
     const tokenRes = await axios.post('https://discord.com/api/oauth2/token', 
       new URLSearchParams({
         client_id: process.env.DISCORD_CLIENT_ID,
@@ -123,6 +151,7 @@ app.get('/api/auth/callback', async (req, res) => {
     });
 
     const user = userRes.data;
+    console.log(`👤 User: ${user.username} (${user.id})`);
 
     const dbUser = await prisma.user.upsert({
       where: { discordId: user.id },
@@ -144,8 +173,8 @@ app.get('/api/auth/callback', async (req, res) => {
     res.redirect('/dashboard');
 
   } catch (error) {
-    console.error('Auth error:', error);
-    res.status(500).send('Authentication failed');
+    console.error('❌ Auth error DETAILS:', error.response?.data || error.message);
+    res.status(500).send('Authentication failed: ' + (error.response?.data?.error || error.message));
   }
 });
 
