@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: discord-onliner
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: discord-onliner-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: discord-onliner-redis
+          type: redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      - key: INTERNAL_API_KEY
+        generateValue: true
+      - key: ADMIN_DISCORD_ID
+        value: YOUR_DISCORD_USER_ID
+      - key: DISCORD_CLIENT_ID
+        value: YOUR_DISCORD_CLIENT_ID
+      - key: DISCORD_CLIENT_SECRET
+        value: YOUR_DISCORD_CLIENT_SECRET
+      - key: DISCORD_BOT_TOKEN
+        value: YOUR_DISCORD_BOT_TOKEN
+
+  - type: redis
+    name: discord-onliner-redis
+    plan: free
+
+  - type: postgresql
+    name: discord-onliner-db
+    plan: free
