@@ -33,6 +33,7 @@ services:
   - type: redis
     name: discord-onliner-redis
     plan: free
+    ipAllowList: []
 
 databases:
   - name: discord-onliner-db
