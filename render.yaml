@@ -22,13 +22,13 @@ services:
       - key: INTERNAL_API_KEY
         generateValue: true
       - key: ADMIN_DISCORD_ID
-        value: YOUR_DISCORD_USER_ID
+        value: 1524547752741310578
       - key: DISCORD_CLIENT_ID
-        value: YOUR_DISCORD_CLIENT_ID
+        value: 1541545028848066630
       - key: DISCORD_CLIENT_SECRET
-        value: YOUR_DISCORD_CLIENT_SECRET
+        value: DbOMkG5KYPB3DQk0JQbkjaevxw1CmHJj
       - key: DISCORD_BOT_TOKEN
-        value: YOUR_DISCORD_BOT_TOKEN
+        value: MTU0MTU0NTAyODg0ODA2NjYzMA.GAe0WF.d7BYiYBgMilQic2E3zCTT3UQlCb0jGntVN2oi4
 
   - type: redis
     name: discord-onliner-redis
