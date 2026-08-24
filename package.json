@@ -2,6 +2,7 @@
   "name": "discord-onliner",
   "version": "1.0.0",
   "scripts": {
+    "prestart": "npx prisma generate",
     "start": "node server.js"
   },
   "dependencies": {
