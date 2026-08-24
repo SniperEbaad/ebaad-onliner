@@ -3,8 +3,8 @@ services:
     name: discord-onliner-fkua
     runtime: node
     plan: free
-    buildCommand: npm install && npx prisma generate
-    startCommand: node server.js
+    buildCommand: npm install
+    startCommand: npm start
     envVars:
       - key: DATABASE_URL
         fromDatabase:
