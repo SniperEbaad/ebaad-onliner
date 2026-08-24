@@ -34,6 +34,6 @@ services:
     name: discord-onliner-redis
     plan: free
 
-  - type: postgres
-    name: discord-onliner-db
+databases:
+  - name: discord-onliner-db
     plan: free
