@@ -1,5 +1,5 @@
 const express = require('express');
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
 const { PrismaClient } = require('@prisma/client');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
@@ -16,84 +16,60 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(cors());
 
-console.log('🚀 Starting Discord Onliner...');
-console.log(`🔗 Base URL: ${BASE_URL}`);
-
-// ===== HOMEPAGE =====
-app.get('/', (req, res) => {
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Discord Onliner</title>
-      <style>
-        body { background: #0a0a0a; color: #fff; font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .card { background: #121212; border: 1px solid #1a1a1a; border-radius: 12px; padding: 40px; text-align: center; max-width: 400px; }
-        h1 { font-weight: 300; letter-spacing: 2px; }
-        .btn { display: inline-block; padding: 12px 30px; border: 1px solid #fff; color: #fff; text-decoration: none; border-radius: 8px; margin-top: 20px; transition: all 0.3s; }
-        .btn:hover { background: #fff; color: #0a0a0a; }
-        .sub { color: #666; font-size: 14px; margin-top: 10px; }
-      </style>
-    </head>
-    <body>
-      <div class="card">
-        <h1>◈ onliner</h1>
-        <p style="color: #888; font-size: 14px;">Discord Session Manager</p>
-        <a href="/api/auth/login" class="btn">Login with Discord</a>
-        <p class="sub">Secure • Private • Self-Hosted</p>
-      </div>
-    </body>
-    </html>
-  `);
-});
-
-// ===== DISCORD BOT =====
+// ============================================================
+// DISCORD BOT WITH SLASH COMMANDS
+// ============================================================
 const bot = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.DirectMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers
   ]
 });
 
-bot.on('ready', () => {
-  console.log(`✅ Bot logged in as ${bot.user.tag}`);
+bot.on('ready', async () => {
+  console.log(`✅ BOT IS ONLINE: ${bot.user.tag}`);
+  console.log(`📢 Bot is in ${bot.guilds.cache.size} servers.`);
+  
+  // Register slash commands
+  const commands = [
+    new SlashCommandBuilder()
+      .setName('allow')
+      .setDescription('Allow a user to access the dashboard')
+      .addUserOption(option => 
+        option.setName('user')
+          .setDescription('The user to allow')
+          .setRequired(true)
+      )
+  ];
+
+  const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
+
+  try {
+    console.log('🔄 Registering slash commands...');
+    await rest.put(
+      Routes.applicationCommands(process.env.DISCORD_CLIENT_ID),
+      { body: commands }
+    );
+    console.log('✅ Slash commands registered!');
+  } catch (err) {
+    console.error('❌ Failed to register slash commands:', err);
+  }
 });
 
-bot.on('messageCreate', async (message) => {
-  // DEBUG: Log every message the bot receives
-  console.log('📩 Received message:', message.content);
-  console.log('👤 From:', message.author.tag);
-  console.log('🤖 Is bot?', message.author.bot);
+bot.on('interactionCreate', async (interaction) => {
+  if (!interaction.isCommand()) return;
+  if (interaction.commandName !== 'allow') return;
 
-  if (message.author.bot) return;
-
-  if (!message.content.startsWith('.allow')) {
-    console.log('⏭️ Not a .allow command, ignoring');
-    return;
+  // Only the admin can use this command
+  if (interaction.user.id !== process.env.ADMIN_DISCORD_ID) {
+    return interaction.reply({ content: '❌ You are not authorized to use this command.', ephemeral: true });
   }
 
-  console.log('🔍 Processing .allow command...');
-
-  const args = message.content.split(' ');
-  if (args.length < 2) {
-    console.log('❌ No username provided');
-    return message.reply('Usage: .allow @username');
-  }
-
-  const targetUser = message.mentions.users.first();
+  const targetUser = interaction.options.getUser('user');
   if (!targetUser) {
-    console.log('❌ No valid mention found');
-    return message.reply('Mention a valid user.');
-  }
-
-  console.log(`👤 Target user: ${targetUser.username} (${targetUser.id})`);
-  console.log(`🔑 Admin ID: ${process.env.ADMIN_DISCORD_ID}`);
-  console.log(`👤 Message author ID: ${message.author.id}`);
-
-  if (message.author.id !== process.env.ADMIN_DISCORD_ID) {
-    console.log('❌ Not authorized (wrong admin ID)');
-    return message.reply('❌ You are not authorized.');
+    return interaction.reply({ content: '❌ Please mention a valid user.', ephemeral: true });
   }
 
   try {
@@ -107,19 +83,53 @@ bot.on('messageCreate', async (message) => {
         isAllowed: true
       }
     });
-    console.log(`✅ ${targetUser.username} now has access.`);
-    message.reply(`✅ ${targetUser.username} now has access.`);
+    await interaction.reply({ content: `✅ ${targetUser.username} now has access.`, ephemeral: false });
+    console.log(`✅ Allowed ${targetUser.username} (${targetUser.id})`);
   } catch (err) {
     console.error('❌ DB error:', err);
-    message.reply('❌ Database error occurred.');
+    await interaction.reply({ content: '❌ Database error occurred.', ephemeral: true });
   }
 });
 
 bot.login(process.env.DISCORD_BOT_TOKEN).catch(err => {
-  console.error('❌ Bot failed to login:', err.message);
+  console.error('❌ Bot login failed:', err.message);
 });
 
-// ===== DISCORD OAUTH ROUTES =====
+// ============================================================
+// WEB SERVER
+// ============================================================
+app.get('/', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head><title>Discord Onliner</title>
+    <style>
+      body { background: #0a0a0a; color: #fff; font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+      .card { background: #121212; border: 1px solid #1a1a1a; border-radius: 12px; padding: 40px; text-align: center; max-width: 400px; }
+      h1 { font-weight: 300; letter-spacing: 2px; }
+      .btn { display: inline-block; padding: 12px 30px; border: 1px solid #fff; color: #fff; text-decoration: none; border-radius: 8px; margin-top: 20px; transition: all 0.3s; }
+      .btn:hover { background: #fff; color: #0a0a0a; }
+      .sub { color: #666; font-size: 14px; margin-top: 10px; }
+      .status { color: #66ff99; font-size: 12px; margin-top: 20px; }
+    </style>
+    </head>
+    <body>
+      <div class="card">
+        <h1>◈ onliner</h1>
+        <p style="color: #888; font-size: 14px;">Discord Session Manager</p>
+        <a href="/api/auth/login" class="btn">Login with Discord</a>
+        <p class="sub">Secure • Private • Self-Hosted</p>
+        <p class="status">🟢 Bot is online</p>
+        <p class="sub">Use slash command: <code>/allow @user</code> in your server</p>
+      </div>
+    </body>
+    </html>
+  `);
+});
+
+// ============================================================
+// DISCORD OAUTH ROUTES
+// ============================================================
 app.get('/api/auth/login', (req, res) => {
   const url = `https://discord.com/api/oauth2/authorize?client_id=${process.env.DISCORD_CLIENT_ID}&redirect_uri=${BASE_URL}/api/auth/callback&response_type=code&scope=identify`;
   res.redirect(url);
@@ -131,10 +141,6 @@ app.get('/api/auth/callback', async (req, res) => {
 
   try {
     console.log('🔑 Exchanging code for token...');
-    console.log('📦 Client ID:', process.env.DISCORD_CLIENT_ID);
-    console.log('🔒 Client Secret exists?', !!process.env.DISCORD_CLIENT_SECRET);
-    console.log('🌐 Redirect URI:', `${BASE_URL}/api/auth/callback`);
-
     const tokenRes = await axios.post('https://discord.com/api/oauth2/token', 
       new URLSearchParams({
         client_id: process.env.DISCORD_CLIENT_ID,
@@ -173,80 +179,11 @@ app.get('/api/auth/callback', async (req, res) => {
     res.redirect('/dashboard');
 
   } catch (error) {
-    console.error('❌ Auth error DETAILS:', error.response?.data || error.message);
-    res.status(500).send('Authentication failed: ' + (error.response?.data?.error || error.message));
+    console.error('❌ Auth error:', error.response?.data || error.message);
+    res.status(500).send('Authentication failed');
   }
 });
 
-app.get('/api/auth/me', async (req, res) => {
-  const token = req.cookies.session_token;
-  if (!token) return res.status(401).json({ error: 'Not authenticated' });
-
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      select: { username: true, discordId: true, isAllowed: true }
-    });
-    res.json(user);
-  } catch {
-    res.status(401).json({ error: 'Invalid token' });
-  }
-});
-
-app.get('/api/auth/logout', (req, res) => {
-  res.clearCookie('session_token');
-  res.redirect('/');
-});
-
-// ===== SESSION API =====
-app.post('/api/session/start', async (req, res) => {
-  const token = req.cookies.session_token;
-  if (!token) return res.status(401).json({ error: 'Not authenticated' });
-
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      select: { isAllowed: true }
-    });
-
-    if (!user || !user.isAllowed) {
-      return res.status(403).json({ error: 'Not authorized' });
-    }
-
-    const { token: discordToken, duration } = req.body;
-    if (!discordToken) return res.status(400).json({ error: 'Token required' });
-
-    res.json({ success: true, sessionId: 'session_' + Date.now() });
-
-  } catch {
-    res.status(401).json({ error: 'Invalid session' });
-  }
-});
-
-app.get('/api/session/logs', (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.write('data: ["✅ Connected to log stream"]\n\n');
-
-  const interval = setInterval(() => {
-    res.write(': heartbeat\n\n');
-  }, 30000);
-
-  req.on('close', () => {
-    clearInterval(interval);
-    res.end();
-  });
-});
-
-// ===== HEALTH CHECK =====
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-// ===== ACCESS DENIED PAGE =====
 app.get('/access-denied', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -266,7 +203,7 @@ app.get('/access-denied', (req, res) => {
         <div class="lock">🔒</div>
         <h1>Access Denied</h1>
         <p style="color: #888;">You don't have permission to access this dashboard.</p>
-        <p class="sub">Contact <span class="highlight">Ebaad</span> on Discord to request access.</p>
+        <p class="sub">Use <code>/allow @user</code> in your server to grant access.</p>
         <a href="/api/auth/logout" style="color: #666; text-decoration: none; font-size: 14px; display: inline-block; margin-top: 20px;">Sign out →</a>
       </div>
     </body>
@@ -274,7 +211,6 @@ app.get('/access-denied', (req, res) => {
   `);
 });
 
-// ===== DASHBOARD PAGE =====
 app.get('/dashboard', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -427,7 +363,52 @@ app.get('/dashboard', (req, res) => {
   `);
 });
 
-// ===== START SERVER =====
+app.post('/api/session/start', async (req, res) => {
+  const token = req.cookies.session_token;
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: { isAllowed: true }
+    });
+
+    if (!user || !user.isAllowed) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    const { token: discordToken, duration } = req.body;
+    if (!discordToken) return res.status(400).json({ error: 'Token required' });
+
+    res.json({ success: true, sessionId: 'session_' + Date.now() });
+
+  } catch {
+    res.status(401).json({ error: 'Invalid session' });
+  }
+});
+
+app.get('/api/session/logs', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.write('data: ["✅ Connected to log stream"]\n\n');
+
+  const interval = setInterval(() => {
+    res.write(': heartbeat\n\n');
+  }, 30000);
+
+  req.on('close', () => {
+    clearInterval(interval);
+    res.end();
+  });
+});
+
+app.get('/api/auth/logout', (req, res) => {
+  res.clearCookie('session_token');
+  res.redirect('/');
+});
+
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`🌐 Open: ${BASE_URL}`);
